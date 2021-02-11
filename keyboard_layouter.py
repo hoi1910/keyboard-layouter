@@ -4,6 +4,7 @@ import json
 import math
 import sys
 import traceback
+import copy
 
 SWITCH_REF_PREFIX = 'SW'
 DIODE_REF_PREFIX = 'D'
@@ -34,7 +35,7 @@ KEY_ORIGIN = {
 
 DEFAULT_PARAMS = {
     'json': {
-        'file': '',
+        'file': u'',
         'data': [],
     },
     'switch': {
@@ -44,6 +45,7 @@ DEFAULT_PARAMS = {
         'move': False,
         'offset_x_mm': '0',  # -8.6725
         'offset_y_mm': '0',  # 8.59
+        'rotate': '0',
         'flip': False,
     },
 }
@@ -174,16 +176,17 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                                              self.params['diode']['offset_y_mm'])
                 diode.Move(pcbnew.wxPointMM(dx_mm, dy_mm))
 
-                if self.params['diode']['move']:
+                if self.params['diode']['flip']:
                     diode.Flip(diode.GetCenter())
                 diode.SetOrientationDegrees(r)
+                diode.Rotate(diode.GetCenter(), self.params['diode']['rotate'] * 10)
 
     def __gui(self):
-        WINDOW_SIZE = (600, 270)
+        WINDOW_SIZE = (600, 310)
         MARGIN_PIX = 10
         INDENT_PIX = 20
 
-        params = DEFAULT_PARAMS.copy()
+        params = copy.deepcopy(DEFAULT_PARAMS)
 
         def frame_title():
             return '%s (%s)' % (self.name, self.version)
@@ -255,10 +258,12 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                     if params['diode']['move']:
                         textctrl_offset_x_mm.Enable()
                         textctrl_offset_y_mm.Enable()
+                        textctrl_rotate.Enable()
                         checkbox_flip.Enable()
                     else:
                         textctrl_offset_x_mm.Disable()
                         textctrl_offset_y_mm.Disable()
+                        textctrl_rotate.Disable()
                         checkbox_flip.Disable()
 
                 def textctrl_offset_x_mm_handler(_):
@@ -266,6 +271,9 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
 
                 def textctrl_offset_y_mm_handler(_):
                     params['diode']['offset_y_mm'] = textctrl_offset_y_mm.GetValue()
+
+                def textctrl_rotate_handler(_):
+                    params['diode']['rotate'] = textctrl_rotate.GetValue()
 
                 def checkbox_flip_handler(_):
                     params['diode']['flip'] = checkbox_flip.GetValue()
@@ -300,6 +308,18 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                 layout_offset_y_mm.Add(textctrl_offset_y_mm, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
                 panel_offset_y_mm.SetSizer(layout_offset_y_mm)
 
+                panel_rotate = wx.Panel(self, wx.ID_ANY)
+                text_rotate = wx.StaticText(panel_rotate, wx.ID_ANY, 'rotate [deg]:')
+                textctrl_rotate = wx.TextCtrl(panel_rotate, wx.ID_ANY)
+                set_initial_textctrl(textctrl_rotate,
+                                     params['diode']['move'],
+                                     params['diode']['rotate'])
+                textctrl_rotate.Bind(wx.EVT_TEXT, textctrl_rotate_handler)
+                layout_rotate = wx.BoxSizer(wx.HORIZONTAL)
+                layout_rotate.Add(text_rotate, flag=wx.ALIGN_CENTER)
+                layout_rotate.Add(textctrl_rotate, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
+                panel_rotate.SetSizer(layout_rotate)
+
                 checkbox_flip = wx.CheckBox(self, wx.ID_ANY, 'Flip')
                 set_initial_checkbox(checkbox_flip, False, params['diode']['move'])
                 checkbox_flip.Bind(wx.EVT_CHECKBOX, checkbox_flip_handler)
@@ -308,6 +328,7 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                 layout.Add(checkbox_move)
                 layout.Add(panel_offset_x_mm, flag=wx.LEFT, border=INDENT_PIX)
                 layout.Add(panel_offset_y_mm, flag=wx.LEFT, border=INDENT_PIX)
+                layout.Add(panel_rotate, flag=wx.LEFT, border=INDENT_PIX)
                 layout.Add(checkbox_flip, flag=wx.LEFT, border=INDENT_PIX)
                 self.SetSizer(layout)
 
@@ -319,7 +340,6 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                         status, messages = callback(p)
                         if status == 'warning':
                             wx.MessageBox('\n'.join(messages), 'Warning', style=wx.OK | wx.ICON_WARNING)
-                        top_frame.Close(True)
                     except IOError:
                         wx.MessageBox('Keyboard Layouter cannot open this file.\n\n%s' % params['json']['file'],
                                       'Error: File cannot be opened', style=wx.OK | wx.ICON_ERROR)
@@ -333,18 +353,26 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                     finally:
                         return
 
+                def closebutton_run_handler(_):
+                    top_frame.Close(True)
+
                 super(RunPanel, self).__init__(parent, wx.ID_ANY)
                 button = wx.Button(self, wx.ID_ANY, 'Run')
                 button.Bind(wx.EVT_BUTTON, button_run_handler)
 
+                closebutton = wx.Button(self, wx.ID_ANY, 'Close')
+                closebutton.Bind(wx.EVT_BUTTON, closebutton_run_handler)
+
                 layout = wx.BoxSizer(wx.VERTICAL)
                 layout.Add(button, 0, wx.GROW)
+                layout.Add(closebutton, 0, wx.GROW)
                 self.SetSizer(layout)
 
             def __pre_process(self, p):
                 p['json']['data'] = self.__load_json(p)
                 p['diode']['offset_x_mm'] = float(p['diode']['offset_x_mm'])
                 p['diode']['offset_y_mm'] = float(p['diode']['offset_y_mm'])
+                p['diode']['rotate'] = float(p['diode']['rotate'])
                 return p
 
             @staticmethod
